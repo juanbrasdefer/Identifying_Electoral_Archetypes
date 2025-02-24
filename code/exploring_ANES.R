@@ -101,47 +101,48 @@ df <- read.delim(here("data/ANES/2016/anes_timeseries_2016/anes_timeseries_2016_
 # V161522 - PRE: How satisfied is R with life
 
 #Post-Election Variables
+# V162002 - POST: How many programs about 2016 campaign did R watch on TV
+# V162003 - POST: How many speeches about 2016 campaign did R listen to on radio
+# V162004 - POST: How many times R got info about 2016 campaign on the Internet
+# V162005 - POST: How many stories R read about 2016 campaign in any newspaper
+# V162007 - POST: Did party contact R about 2016 campaign
+# V162007a - POST: Which party contacted R about 2016 campaign
+# V162011 - POST: R go to any political meetings, rallies, speeches
+# V162031 - POST: Did R vote in the November 2016 elections
+# V162031x - PRE-POST: SUMMARY -Did R vote in 2016
+# V162034 - POST: Did R vote for President
+# V162034a - POST: For whom did R vote for President
+# V162035 - POST: Preference strong for Pres cand for whom R voted
+# V162036a - POST: Code- How long before election R made decision Pres vote
+# V162038x - POST: SUMMARY- Preference for Pres cand (did not vote)
+# V162058x - POST: SUMMARY -Post-election Presidential vote/pref
+# V162062x - 2016 PRE-POST VOTE SUMMARY: 2016 Presidential vote
+# V162066x - 2016 PRE-POST VOTE SUMMARY: 2016 Presidential vote w/strength
+# V162072 - POST: Office recall: Vice-President Biden
+# V162074a - POST: Office recall: Chancellor of Germany Merkel
+# V162074b - POST: Office recall: Chancellor of Germany Merkel [Scheme 2]
+# V162075a - POST: Office recall: President of Russia Putin
+# V162075b - POST: Office recall: President of Russia Putin [Scheme 2]
+# V162078 - POST: Feeling thermometer: Democratic Presidential candidate
+# V162079 - POST: Feeling thermometer: Republican Presidential candidate
+# V162100 - POST: Feeling thermometer: BIG BUSINESS
+# V162103 - POST: Feeling thermometer: GAY MEN AND LESBIANS
+# V162105 - POST: Feeling thermometer: RICH PEOPLE
+# V162106 - POST: Feeling thermometer: MUSLIMS
+# V162113 - POST: Feeling thermometer: BLACK LIVES MATTER
+# V162116a_1 - POST: Most Important Problem - Mention 1, Idea 1 (meaning just their #1)
+# V162117 - POST: Party to deal with mention 1 MIP
+# V162118a_1 - POST: Most Important Problem - Mention 2, Idea 1
+# V162119 - POST: Party to deal with mention 2 MIP
+# V162123 - POST: Better if rest of world more like America
+# V162126 - POST: Heard about Rep Presidential cand Trump 2005 video about women
+# V162127 - POST: Does Rep Presidential cand Trump 2005 video about women matter
+# V162134 - POST: How much opportunity in America to get ahead
+# V162135 - POST: Economic mobility compared to 20 yrs ago
+# V162136x - POST: SUMMARY- Economic mobility easier/harder compared to 20 yrs ago
 #
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
+
+# from V162139 to V162295x is all issue question; super good ones
 #
 #
 #
