@@ -6,10 +6,10 @@
 
 library(tidyverse) # data manipulation
 library(here) # working paths
+library(tictoc) # stopwatch functionality
 library(httr) # access sites 
 library(rvest) # harvest (scrape) data 
 library(xml2) # xml data manipulation
-
 
 
 # working directory
@@ -20,11 +20,7 @@ here::i_am("code/scraping_APP.R")
 
 
 
-
-
-
-
-# attempt 3, automated link collection ------------------------------------------------------
+# 1.1 PREP automated link collection ------------------------------------------------------
 
 
 # URL of the speeches index page (Modify this to match the right page!)
@@ -40,6 +36,9 @@ max_pages <- 10  # Set the limit here (adjust this number as needed)
 
 # Initialize an empty vector to store all the URLs you scrape
 all_links <- c()
+
+
+# 1.1 LOOP automated link collection ------------------------------------------------------
 
 # Loop to scrape each page until max_pages
 while(page_num <= max_pages) {
@@ -62,7 +61,7 @@ while(page_num <= max_pages) {
   all_links <- c(all_links, speech_links)
   
   # Print status
-  cat("Scraped page ", page_num, "\n")
+  cat("Scraped index page", page_num, "for links", "\n")
   
   # Increment the page number
   page_num <- page_num + 1
@@ -71,13 +70,19 @@ while(page_num <= max_pages) {
   Sys.sleep(1)  # Sleep for 1 seconds between requests
 }
 
+all_links <- unique(all_links)
+all_links_df <- as.data.frame(all_links)
+
+all_links_df %>%
+  write_csv(here("data/APP_UCSB/scraped_links_campaigndocs.csv"))
 
 
 
 
-# attempt 4, batch scrape from automated links -------------------------------------------------
 
-urls <- all_links[1:10]
+
+# 2.1 PREP scrape webpages using links -------------------------------------------------
+
 
 # Function to extract text using XPath
 extract_text <- function(html_content, xpath) {
@@ -93,24 +98,78 @@ extract_text <- function(html_content, xpath) {
 }
 
 
-# Initialize an empty data frame
-speech_data <- data.frame(
-  url = character(),
-  speaker = character(),
-  date = character(),
-  title = character(),
-  citation = character(),
-  body = character(),
-  stringsAsFactors = FALSE
-)
+
+speech_data <- speech_data %>%
+  mutate(body = str_replace_all(body, "[\r\n]", " ")) %>%
+  mutate(nchars = nchar(body))
 
 
-for (url in urls){
-  # Define the URL
+speech_data %>%
+  saveRDS(file = "data/APP_UCSB/scraped_campaigndocs.rds")
+  
+
+# for excel
+speech_data_truncated <- speech_data %>%
+  #mutate(body = str_replace_all(body, "[:punct:]", " ")) %>%
+  mutate(body_1 = str_sub(body, 1, 30000),  # First 30,000 characters
+         body_2 = str_sub(body, 30001, 60000),
+         body_3 = str_sub(body, 60001, 90000),
+         body_4 = str_sub(body, 90001, nchar(body))) %>%
+  select(-body) %>%
+  write_csv(here("data/APP_UCSB/scraped_campaigndocs_truncated.csv"), quote = "all")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 3 perhaps pipeline ---------------------------------------------------------
+
+# Set batch size for saving
+save_interval <- 500  
+today_date <- date()
+
+# Initialize an empty data frame or load existing progress
+output_file <- here("data/APP_UCSB/scraped_campaigndocs.rds")
+
+if (file.exists(output_file)) {
+  speech_data <- readRDS(output_file)  # Load existing progress
+  scraped_urls <- speech_data$url      # Track scraped URLs
+} else {
+  speech_data <- data.frame(
+    url = character(),
+    date_scraped = character(),
+    speaker = character(),
+    date = character(),
+    title = character(),
+    citation = character(),
+    body = character(),
+    stringsAsFactors = FALSE
+  )
+  scraped_urls <- c()  # Start with empty list
+}
+
+
+# URLs to scrape (excluding already scraped ones)
+urls_to_scrape <- setdiff(all_links, scraped_urls)  
+
+x <- nrow(speech_data) + 1  # Resume from last scraped entry
+tictoc::tic()
+
+for (url in urls_to_scrape){
+  # Define the full URL
   website_stub <- "https://www.presidency.ucsb.edu"
   url <- paste0(website_stub, url)
   
-  cat("fetching page: ", url, "\n")
+  cat("Fetching page:", x, "\n")
+  cat(url, "\n\n")
   
   # Fetch the webpage
   page <- GET(url)
@@ -127,9 +186,10 @@ for (url in urls){
     body = "//div[contains(@class, 'field-docs-content')]"
   )
   
-  # create data row from xpath results
+  # Create data row from xpath results
   data_row <- data.frame(
     url = url,
+    date_scraped = today_date,
     speaker = extract_text(html_content, xpaths$speaker),
     date = extract_text(html_content, xpaths$date),
     title = extract_text(html_content, xpaths$title),
@@ -138,14 +198,98 @@ for (url in urls){
     stringsAsFactors = FALSE
   )
   
-  # append row to running df
+  # Append row to dataframe
   speech_data <- rbind(speech_data, data_row)
   
-  # system messages and sleep
-  cat("row appended, sleeping...","\n")
-  Sys.sleep(1)
+  # Save every `save_interval` pages
+  if (x %% save_interval == 0) {
+    saveRDS(speech_data, file = output_file)
+    cat("---Progress saved at", x, "pages\n")
+  }
   
+  # Increment counter
+  x <- x + 1  
+  Sys.sleep(1)  # Prevent rate limiting
 }
+
+
+tictoc::toc()
+
+# saving data -----------------------------------------------------------------
+speech_data <- speech_data %>%
+  mutate(body = str_replace_all(body, "[\r\n]", " ")) %>%
+  mutate(nchars = nchar(body))
+
+speech_data %>%
+  saveRDS(file = here("data/APP_UCSB/scraped_campaigndocs.rds"))
+
+# for excel
+speech_data_truncated <- speech_data %>%
+  #mutate(body = str_replace_all(body, "[:punct:]", " ")) %>%
+  mutate(body_1 = str_sub(body, 1, 30000),  # First 30,000 characters
+         body_2 = str_sub(body, 30001, 60000),
+         body_3 = str_sub(body, 60001, 90000),
+         body_4 = str_sub(body, 90001, nchar(body))) %>%
+  select(-body) %>%
+  write_csv(here("data/APP_UCSB/scraped_campaigndocs_truncated.csv"), quote = "all")
+
+
+cat("Final dataset saved \n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
