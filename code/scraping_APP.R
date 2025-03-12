@@ -29,7 +29,7 @@ base_url <- "https://www.presidency.ucsb.edu/documents/app-categories/elections-
 page_num <- 1  # Start at page 1
 
 # Maximum number of pages to scrape
-max_pages <- 10  # Set the limit here (adjust this number as needed)
+max_pages <- 370  # Set the limit here (adjust this number as needed)
 # need to go to page 361 at least
 # page 361 is the first one with 2000
 # but there's only a total of like 30 documents for the 2000 election... interesting
@@ -99,49 +99,28 @@ extract_text <- function(html_content, xpath) {
 
 
 
-speech_data <- speech_data %>%
-  mutate(body = str_replace_all(body, "[\r\n]", " ")) %>%
-  mutate(nchars = nchar(body))
-
-
-speech_data %>%
-  saveRDS(file = "data/APP_UCSB/scraped_campaigndocs.rds")
-  
-
-# for excel
-speech_data_truncated <- speech_data %>%
-  #mutate(body = str_replace_all(body, "[:punct:]", " ")) %>%
-  mutate(body_1 = str_sub(body, 1, 30000),  # First 30,000 characters
-         body_2 = str_sub(body, 30001, 60000),
-         body_3 = str_sub(body, 60001, 90000),
-         body_4 = str_sub(body, 90001, nchar(body))) %>%
-  select(-body) %>%
-  write_csv(here("data/APP_UCSB/scraped_campaigndocs_truncated.csv"), quote = "all")
-
-
-
-
-
-
-
-
-
-
 
 
 
 # 3 perhaps pipeline ---------------------------------------------------------
 
 # Set batch size for saving
-save_interval <- 500  
+save_interval <- 50
 today_date <- date()
 
-# Initialize an empty data frame or load existing progress
+# import all scraped links from index page
+all_links_df <- read_csv(here("data/APP_UCSB/scraped_links_campaigndocs.csv"))
+all_links <- all_links_df$all_links # convert to list
+
+
+# load progress from previous page scrape efforts
 output_file <- here("data/APP_UCSB/scraped_campaigndocs.rds")
 
 if (file.exists(output_file)) {
   speech_data <- readRDS(output_file)  # Load existing progress
   scraped_urls <- speech_data$url      # Track scraped URLs
+  scraped_urls <- str_remove_all(scraped_urls, "https://www.presidency.ucsb.edu")
+  
 } else {
   speech_data <- data.frame(
     url = character(),
@@ -151,16 +130,21 @@ if (file.exists(output_file)) {
     title = character(),
     citation = character(),
     body = character(),
+    nchars = integer(),
     stringsAsFactors = FALSE
   )
   scraped_urls <- c()  # Start with empty list
 }
 
 
-# URLs to scrape (excluding already scraped ones)
-urls_to_scrape <- setdiff(all_links, scraped_urls)  
-
+urls_to_scrape <- setdiff(all_links, scraped_urls) # figures out 
+                                                  # which still need to be scraped
 x <- nrow(speech_data) + 1  # Resume from last scraped entry
+
+
+
+
+# begin actual scrape of pages -------------------------------------------
 tictoc::tic()
 
 for (url in urls_to_scrape){
@@ -198,11 +182,18 @@ for (url in urls_to_scrape){
     stringsAsFactors = FALSE
   )
   
+  data_row <- data_row %>% 
+    mutate(nchars = nchar(body))
+  
   # Append row to dataframe
   speech_data <- rbind(speech_data, data_row)
   
   # Save every `save_interval` pages
   if (x %% save_interval == 0) {
+    
+    speech_data <- speech_data %>%
+      mutate(body = str_replace_all(body, "[\r\n]", " "))
+    
     saveRDS(speech_data, file = output_file)
     cat("---Progress saved at", x, "pages\n")
   }
@@ -216,9 +207,7 @@ for (url in urls_to_scrape){
 tictoc::toc()
 
 # saving data -----------------------------------------------------------------
-speech_data <- speech_data %>%
-  mutate(body = str_replace_all(body, "[\r\n]", " ")) %>%
-  mutate(nchars = nchar(body))
+
 
 speech_data %>%
   saveRDS(file = here("data/APP_UCSB/scraped_campaigndocs.rds"))
@@ -310,6 +299,7 @@ xpath_body <- "//div[contains(@class, 'field-docs-content')]" # full text of spe
 # Define the URL
 url <- "https://www.presidency.ucsb.edu/documents/remarks-the-vice-president-political-event-west-allis-wisconsin"
 
+url <- "https://www.presidency.ucsb.edu/documents/remarks-the-vice-president-campaign-event-flint-michigan"
 # Fetch the webpage
 page <- GET(url)
 
@@ -339,7 +329,7 @@ extract_text <- function(xpath) {
 }
 
 # Extract data and store in a data frame
-speech_data <- data.frame(
+temp <- data.frame(
   speaker = extract_text(xpaths$speaker),  # Removing unwanted metadata
   date = extract_text(xpaths$date),  
   title = extract_text(xpaths$title),
