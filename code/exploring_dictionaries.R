@@ -1,53 +1,22 @@
 
-# libraries, directory --------------------------------------------------------
+# LIBRARIES, DIRECTORY --------------------------------------------------------
 
 library(tidyverse)
 library(here)
+library(tictoc)
+library(ggrepel)
 
 here::i_am("code/exploring_dictionaries.R")
 
-
-# load data --------------------------------------------------------------------
-
 change_dict <- read_csv(here("data/dictionaries/change_dictionary.csv"))
 
+# unigram stems from dictionary 
+unigrams_as_list <- as.list(change_dict$stem)
 
 
+# DEBATES ====================================================================
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# SAMPLE CODE FOR CHECKING DEMOCRATIC FREQUENCIES ------------------------------
-
-
-# Text cleaning packages
-library(textdata)
-library(textclean)
-library(dplyr)
-
-# Plotting 
-library(scales)
-library(forcats)
-library(ggplot2)
-library(repr)
-options(repr.plot.width = 10, repr.plot.height = 10)
-
-# load data ---------------------------------------------------------------------
+# load debate data --------------------------------------------------------------------
 debates_jm_raw <- read.csv(here("data/APP_UCSB/josiah_mcmillan/pres_debates.csv"))
 
 
@@ -60,16 +29,20 @@ debates_contemporary = debates_jm_raw %>%
   mutate(speaker_year_id = paste0(speaker, "_", year)) 
 
 
-
+# group data by debate and speaker
+# so that each row becomes everything said by one candidate at a specific debate
+# aka concatenate the text for each candidate at each debate
 debates_contemporary_bydebate <- debates_contemporary %>%
   group_by(date, speaker, year, type, speaker_year_id) %>%
   summarise(text = paste(text, collapse = " "), .groups = "drop") %>%
-  mutate(text_length = nchar(text))
+  mutate(nchars = nchar(text))
 
-debates_contemporary_concat <- debates_contemporary_bydebate %>%
+# then further group together by election year
+# so that all biden debates are in either the row biden_2012 or biden_2020 
+debates_contemporary_byyear <- debates_contemporary_bydebate %>%
   group_by(speaker, year, speaker_year_id) %>%
   summarise(text = paste(text, collapse = " "), .groups = "drop") %>%
-  mutate(text_length = nchar(text))
+  mutate(nchars = nchar(text))
 
 # need to check out: 
 # there is a 11/28/2007 entry for Clinton
@@ -81,51 +54,66 @@ debates_contemporary_concat <- debates_contemporary_bydebate %>%
 # that is clearly for the vice presidential debate and anti-trump
 
 
-ggplot(debates_contemporary_concat, aes(x = text_length)) +
-  geom_histogram(binwidth = 200, fill = "#be67e6", color = "#be67e6", alpha = 0.7) +
-  labs(title = "Distribution of Text Lengths",
-       x = "Number of Characters",
-       y = "Frequency") +
-  theme_minimal()
 
 
 
+# debate dictionary counts ----------------------------------------------------------------
 
-# COUNTS ----------------------------------------------------------------
-
-
-# Create a new dataframe with speaker names
-crosstab_debates <- debates_contemporary_concat %>%
-  group_by(speaker_year_id) %>%
+# create a new dataframe with only speaker_year IDs
+# which will become the base for a df of counts
+# rows will be speaker_year
+# columns will be unigram stem
+# ergo: crosstab of frequencies
+crosstab_debates <- debates_contemporary_byyear %>%
+  group_by(speaker_year_id, speaker, year) %>%
   summarise(across(everything(), ~ first(.), .names = "meta_{.col}")) %>% # Preserve metadata
-  select(speaker_year_id)  # Keep only speaker_year_id column for now
+  select(speaker_year_id,
+         speaker,
+         year)  # Keep only a few columns for now
 
 
+# count occurrences of each word
+# and add as column to crosstab df
 
-unigrams_as_list <- as.list(change_dict$stem)
-
-# Count occurrences of each word
+tictoc::tic()
 for (word in unigrams_as_list) {
-  crosstab_debates[[word]] <- debates_contemporary_concat %>%
+  crosstab_debates[[word]] <- debates_contemporary_byyear %>%
     group_by(speaker_year_id) %>%
     summarise(count = sum(str_count(tolower(text), 
                                     tolower(word))), .groups = "drop") %>%
     pull(count)
 }
+tictoc::toc()
+# about 20 seconds for 90 debates and 56 dict terms
+# though length of debate text varies massively
 
 
-crosstab_debates <- crosstab_debates %>%
+# then add two things to crosstab
+# total number of change terms for each row (sum frequency of each)
+  # (ie: we don't differentiate between 'importance' of each term)
+# text length (from other df, hence a left_join)
+crosstab_debates_totals <- crosstab_debates %>%
   mutate(total_changegrams = rowSums(across(where(is.numeric)), 
                                      na.rm = TRUE)) %>%
-  left_join(debates_contemporary_concat%>%select(speaker_year_id,text_length),    
-            by = "speaker_year_id") 
+  left_join(debates_contemporary_byyear%>%select(speaker_year_id,
+                                                 nchars),    
+            by = "speaker_year_id") %>%
+  select(speaker_year_id,
+         total_changegrams,
+         speaker,
+         year,
+         nchars)
 
-crosstab_debates <- crosstab_debates %>%
-  mutate(percent_changegrams = (total_changegrams/text_length)*10) %>%
+# then add a percentage column
+# that divites total freq change terms/ num chars in text
+# to account for the fact that some speak way more than others
+crosstab_debates_totals <- crosstab_debates_totals %>%
+  mutate(percent_changegrams = (total_changegrams/(nchars/6))) %>% # div 6 for avg word length in chars
+                                                                          # chars (4.5) plus one space character
   arrange(desc(percent_changegrams)) 
 
-crosstab_debates %>%
-  write_csv(here("data/results/crosstab_debates.csv"))
+crosstab_debates_totals %>%
+  write_csv(here("data/results/crosstab_debates_totals.csv"))
 
 
 
@@ -133,22 +121,170 @@ crosstab_debates %>%
 
 
 
-# generating plot
-single_words = c("corporations","businesses","slavery","police","woman",
-                 "women","tax", "latino", "immigration", "racism", 
-                 "gay", "carbon", "white", "Asian", "wages")
-
-climate_test = dem_debate_words %>% filter(word %in% single_words) 
-climate_test$freq = climate_test$n/climate_test$total
 
 
 
-ggplot(climate_test, aes(x=freq, y=word), fig(10,10)) + 
-  geom_point(size=4, aes(colour=year), alpha = 0.7) +
-  theme_bw() +  
-  ggtitle("Frequency of selected terms in Democratic Primary Debates") +
-  xlab("Frequency") + 
-  # ylab("Word") + 
-  # scale_fill_discrete(name ="Election Year") +  
-  labs(color ='Election Year')  +
-  theme(axis.title.y=element_blank())
+# CAMPAIGN DOCS ====================================================================
+
+# load debate data --------------------------------------------------------------------
+campaigndocs_raw <- readRDS(here("data/APP_UCSB/scraped_campaigndocs.rds"))
+  
+  
+# then group together by election year
+# so that all clinton speeches are in either the row clinton_2008 or clinton_2016
+campaigndocs_byyear <- campaigndocs_raw %>%
+  select(speaker,
+         date,
+         title,
+         body,
+         nchars) %>%
+  mutate(year = str_extract(date, trimws("(?<=,\\s)\\d{4}"))) %>%
+  mutate(year = ifelse(year == "2023", "2024",
+                       ifelse(year == "2019", "2020",
+                              ifelse(year == "2015", "2016",
+                                     ifelse(year == "2011", "2012",
+                                            ifelse(year == "2007", "2008",
+                                                   ifelse(year == "2003", "2004",
+                                                          ifelse(year == "1999", "2000", year
+                                                                 )))))))) %>%
+  filter(as.integer(year) > 1999) %>%
+  filter(!(year %in% c("2022", "2021", "2018", "2017", "2006", "2002"))) %>%
+  mutate(speaker_year_id = paste0(speaker, "_", year)) %>%
+  group_by(speaker, year, speaker_year_id) %>%
+  summarise(text = paste(body, collapse = " "), .groups = "drop") %>%
+  mutate(nchars = nchar(text))
+
+
+unique(campaigndocs_byyear$year)
+
+# campaign docs dictionary counts ----------------------------------------------------------------
+
+# create a new dataframe with only speaker_year IDs
+# which will become the base for a df of counts
+# rows will be speaker_year
+# columns will be unigram stem
+# ergo: crosstab of frequencies
+crosstab_campaigndocs <- campaigndocs_byyear %>%
+  group_by(speaker_year_id, speaker, year) %>%
+  summarise(across(everything(), ~ first(.), .names = "meta_{.col}")) %>% # Preserve metadata
+  select(speaker_year_id,
+         speaker,
+         year)  # keep only a few columns for now
+
+
+
+# count occurrences of each word
+# and add as column to crosstab df
+
+tictoc::tic()
+for (word in unigrams_as_list) {
+  crosstab_campaigndocs[[word]] <- campaigndocs_byyear %>%
+    group_by(speaker_year_id) %>%
+    summarise(count = sum(str_count(tolower(text), 
+                                    tolower(word))), .groups = "drop") %>%
+    pull(count)
+}
+tictoc::toc()
+# about 18 mins 
+# though length of debate text varies massively
+
+
+# then add two things to crosstab
+# total number of change terms for each row (sum frequency of each)
+# (ie: we don't differentiate between 'importance' of each term)
+# text length (from other df, hence a left_join)
+
+# then add a percentage column
+# that divites total freq change terms/ num chars in text
+# to account for the fact that some speak way more than others
+crosstab_campaigndocs_totals <- crosstab_campaigndocs %>%
+  mutate(total_changegrams = rowSums(across(where(is.numeric)), 
+                                     na.rm = TRUE)) %>%
+  left_join(campaigndocs_byyear%>%select(speaker_year_id,
+                                                 nchars),    
+            by = "speaker_year_id") %>%
+  select(speaker_year_id,
+         speaker,
+         year,
+         total_changegrams,
+         nchars) %>%
+  mutate(percent_changegrams = (total_changegrams/(nchars/6))) %>% # div 6 for avg word length in chars
+  arrange(desc(percent_changegrams))    # chars (4.5) plus one space character
+ 
+
+
+crosstab_campaigndocs_totals %>%
+  write_csv(here("data/results/crosstab_campaigndocs_totals.csv"))
+
+
+
+
+
+
+# GRAPHING ---------------------------------------------------------------
+
+# scatter 1: 'change vocabulary' across years
+top_changespeaker_byyear <- crosstab_campaigndocs_totals %>%
+  group_by(year) %>%
+  slice_max(order_by = percent_changegrams, n = 1, with_ties = FALSE)
+
+# WOULD BE NICE TO ADD:
+# 1) on each year, mark the dem and rep presidential candidates as red and blue dots
+    # or maybe just separate colours into red and blue in general?
+# 2) top change speaker and lowest change speaker
+crosstab_campaigndocs_totals %>%
+ggplot(aes(x = year, 
+           y = percent_changegrams)) +
+  geom_point(size = 2, color = "#c54bfa", alpha = 0.6) +  # Scatter points
+  geom_text(data = top_changespeaker_byyear, aes(label = speaker), vjust = -1, size = 3, color = "#c54bfa") + # Labels
+  labs(
+    title = "Degree of 'Change Vocabulary' use Across Election Years",
+    x = "Year",
+    y = "Percent of 'Change' Vocab"
+  ) +
+  theme_minimal() + 
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),  # White plot background
+    plot.background = element_rect(fill = "white", color = NA),   # White outer background
+    panel.grid.major = element_line(color = "gray90"),  # Light grid lines
+    panel.grid.minor = element_blank()  # Remove minor grid lines
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) # Format y-axis as percentage
+
+ggsave(here("outputs/candidates_changengrams_acrossyears.png"))
+
+
+
+
+# scatter 2: length of total text vs amount of change grams
+top_changespeakers <- crosstab_campaigndocs_totals %>%
+  arrange(desc(percent_changegrams)) %>%
+  head(6)
+
+
+
+crosstab_campaigndocs_totals %>%
+ggplot(aes(x = log(nchars), y = percent_changegrams)) +
+  geom_point(size = 2, color = "#c54bfa", alpha = 0.5) +  # Simple scatter points
+  geom_smooth(method = "lm", formula = y ~ x, color = "#c4167c", se = FALSE) +  # Regression line
+  geom_text_repel(data = top_changespeakers, aes(label = speaker_year_id), size = 3, color = "#c54bfa") + # Labels
+  labs(
+    title = "Duration in Race vs. Degree of 'Change' Vocabulary",
+    x = "Log of Total Words in DSet (Proxy for Duration of Campaign)",
+    y = "Percent of 'Change' Vocab"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),  # White plot background
+    plot.background = element_rect(fill = "white", color = NA),   # White outer background
+    panel.grid.major = element_line(color = "gray90"),  # Light grid lines
+    panel.grid.minor = element_blank()  # Remove minor grid lines
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) # Format y-axis as percentage
+
+
+ggsave(here("outputs/candidates_changengrams_ncharsvspctchange.png"))
+
+
+
+
